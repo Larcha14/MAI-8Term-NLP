@@ -1,0 +1,51 @@
+services:
+  ollama:
+    image: ollama/ollama
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+    healthcheck:
+      test: ["CMD-SHELL", "ollama list >/dev/null 2>&1 || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+      start_period: 20s
+    restart: unless-stopped
+
+  ollama-init:
+    image: curlimages/curl:8.8.0
+    depends_on:
+      ollama:
+        condition: service_healthy
+    command: >
+      sh -c 'curl -s http://ollama:11434/api/pull
+      -H "Content-Type: application/json"
+      -d "{\"model\":\"qwen2.5:0.5b\",\"stream\":false}"'
+    restart: "no"
+
+  mcp-server:
+    build:
+      context: ./mcp-server
+    ports:
+      - "9000:9000"
+    restart: unless-stopped
+
+  api:
+    build:
+      context: ./api
+    depends_on:
+      ollama:
+        condition: service_healthy
+      mcp-server:
+        condition: service_started
+    environment:
+      OLLAMA_BASE_URL: http://ollama:11434
+      MCP_SERVER_URL: http://mcp-server:9000/mcp
+      OLLAMA_MODEL: qwen2.5:0.5b
+    ports:
+      - "8000:8000"
+    restart: unless-stopped
+
+volumes:
+  ollama_data:
